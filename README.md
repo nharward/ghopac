@@ -6,9 +6,9 @@ Utility to pull and/or clone all repos you have access to from one or more Githu
 
 1. Install [go](https://golang.org/ "Golang")
 2. Install [glide](https://github.com/Masterminds/glide)
-3. Fetch this code using `go get github.com/nharward/ghopac` or otherwise make sure it's in `$GOPATH/src/github.com/nharward/ghopac`
+3. Fetch this code using `go get -d github.com/nharward/ghopac` or otherwise make sure it's in `$GOPATH/src/github.com/nharward/ghopac`
 4. Change to `$GOPATH/src/github.com/nharward/ghopac` and run `glide install`
-3. Build the binary: `go install github.com/nharward/ghopac`; you should have a new file called `$GOPATH/bin/ghopac`
+5. Build the binary: `go install github.com/nharward/ghopac`; you should have a new file called `$GOPATH/bin/ghopac`
 
 # Using
 
@@ -38,4 +38,4 @@ Utility to pull and/or clone all repos you have access to from one or more Githu
 * You don't actually have to use Github organizations, you can simply omit `orgs` and just use `syncpoints`.
 * `concurrency` if left unspecified will default to the number of CPU cores on your machine.
 * `syncpoints` do not have to belong to any particular Github organization; they are just places where you expect `git pull` to work correctly
-* If you have no configuration file
+* If you have no configuration file, running the program will fail and output a sample file to get you started
