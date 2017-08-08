@@ -17,6 +17,7 @@ Utility to pull and/or clone all repos you have access to from one or more Githu
 
         {
             "concurrency": 4,
+            "verbose": true,
             "github_access_token": "<from step 1>",
             "orgs": [
                 {
