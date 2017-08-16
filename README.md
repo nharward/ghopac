@@ -4,7 +4,7 @@ Utility to pull - and/or clone if missing on local disk - all repos you have acc
 
 # Building from source
 
-1. Install [rust](https://www.rust-lang.org/)
+1. Install [rust](https://www.rust-lang.org/) (you may need to install [cargo](http://doc.crates.io/) separately depending on your platform/distribution)
 2. Change to the top level source directory
 3. Build the binary by running `cargo build --release`; your optimized binary should be in `./target/release/ghopac`
 4. [Optional] Run `cargo install` to place `ghopac` in your `${HOME}/.cargo/bin` directory; add to your `PATH` if desired
