@@ -13,22 +13,23 @@ Utility to pull - and/or clone if missing on local disk - all repos you have acc
 
 1. Get a Github access token at https://github.com/settings/tokens; minimum access should be reading your orgs and repos
 2. Create a config file in `${XDG_CONFIG_HOME}/ghopac/config.json`, example below:
-
-        {
-            "concurrency": 4,
-            "verbose": true,
-            "github_access_token": "<from step 1>",
-            "orgs": [
-                {
-                    "org": "my_github_org",
-                    "path": "/my/base/code/dir/for/my_github_org"
-                }
-            ],
-            "syncpoints": [
-                "/some/other/cloned/repo/dir",
-                "/yet/another/separately/cloned/repo/dir"
-            ]
-        }
+   ```json
+   {
+       "concurrency": 4,
+       "verbose": true,
+       "github_access_token": "<from step 1>",
+       "orgs": [
+           {
+               "org": "my_github_org",
+               "path": "/my/base/code/dir/for/my_github_org"
+           }
+       ],
+       "syncpoints": [
+           "/some/other/cloned/repo/dir",
+           "/yet/another/separately/cloned/repo/dir"
+       ]
+   }
+   ```
 
 3. Run `ghopac`
 
