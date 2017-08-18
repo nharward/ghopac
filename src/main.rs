@@ -103,14 +103,9 @@ fn configuration(logger: slog::Logger) -> Result<Config, Box<error::Error>> {
 
 fn closest_ancestor_dir(path: Option<&path::Path>) -> Option<&path::Path> {
     match path {
-        Some(path) => {
-            if path.exists() && path.is_dir() {
-                Some(path)
-            } else {
-                closest_ancestor_dir(path.parent())
-            }
-        },
         None => None,
+        Some(path) if path.exists() && path.is_dir() => Some(path),
+        Some(path) => closest_ancestor_dir(path.parent()),
     }
 }
 
