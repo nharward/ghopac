@@ -1,3 +1,26 @@
+//! # What
+//!
+//! `ghopac` is _GitHub Organization Pull And Clone_ - a tool to pull/clone lots of Git
+//! repositories at once with a single command. It primarily has support for
+//! [Github](https://github.com/) organizations and cloning/pulling all organization repos you
+//! have access to. Additionally it also supports keeping existing cloned repos up to date,
+//! regardless of their origin. You can read more about it at ... wait for it ... the [ghopac
+//! Github repo](https://github.com/nharward/ghopac/).
+//!
+//! # Why
+//!
+//! I found myself working at companies with a lot of repositories in their Github organizations,
+//! and it was a pain to even find much less manually clone all of the ones I cared about. Disk is
+//! cheap, so I wrote a [Go](https://golang.org/) program to grab them all at once  in parallel.
+//! (see the `go-legacy` tag to see the code). I re-wrote it in [Rust](https://www.rust-lang.org/)
+//! because I needed an excuse to learn it.
+//!
+
+#[macro_use]
+extern crate slog;
+extern crate slog_async;
+extern crate slog_term;
+
 #[macro_use]
 extern crate serde_derive;
 
@@ -5,6 +28,7 @@ extern crate hubcaps;
 extern crate hyper;
 extern crate hyper_native_tls;
 extern crate serde_json;
+
 extern crate spmc;
 extern crate xdg;
 
@@ -23,13 +47,15 @@ use hyper::Client;
 use hyper_native_tls::NativeTlsClient;
 use hyper::net::HttpsConnector;
 
-#[derive(Debug, Serialize, Deserialize)]
+use slog::Drain;
+
+#[derive(Serialize, Deserialize)]
 struct ConfigOrg {
     org: String,
     path: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 struct Config {
     github_access_token: Option<String>,
     orgs:                Option<Vec<ConfigOrg>>,
@@ -38,7 +64,6 @@ struct Config {
     verbose:             Option<bool>,
 }
 
-#[derive(Debug)]
 struct GitRepoSyncRequest {
     path: path::PathBuf,
     clone_url: Option<String>,
@@ -50,14 +75,18 @@ const DEFAULT_CONCURRENCY: u8 = 4;
 
 fn show_config_sample_and_exit_1() -> path::PathBuf {
     let sample_config = Config {
-        github_access_token: Some("Replace with a token from https://github.com/settings/tokens".to_owned()),
+        github_access_token: Some("Use a token from https://github.com/settings/tokens".to_owned()),
         orgs: Some(vec![
             ConfigOrg {
-                org: "myorg".to_owned(),
-                path: "/myorg/source/directory".to_owned(),
+                org: "my_org".to_owned(),
+                path: "/my_org/source/directory".to_owned(),
+            },
+            ConfigOrg {
+                org: "some_other_org".to_owned(),
+                path: "/some_other_org/source/directory".to_owned(),
             },
         ]),
-        syncpoints: Some(vec!["/some/other/directory".to_owned()]),
+        syncpoints: Some(vec!["/some/previously/cloned/directory".to_owned(), "/some/other/previously/cloned/directory".to_owned()]),
         concurrency: Some(DEFAULT_CONCURRENCY),
         verbose: Some(true),
     };
@@ -66,9 +95,10 @@ fn show_config_sample_and_exit_1() -> path::PathBuf {
     process::exit(1);
 }
 
-fn configuration() -> Result<Config, Box<error::Error>> {
-    let xdg_dirs = xdg::BaseDirectories::with_prefix(PROGRAM_NAME).expect("Something is wrong with your XDG environment variables");
+fn configuration(logger: slog::Logger) -> Result<Config, Box<error::Error>> {
+    let xdg_dirs = xdg::BaseDirectories::with_prefix(PROGRAM_NAME).expect("Issue processing your XDG environment variables");
     let config_file_path: path::PathBuf = xdg_dirs.find_config_file(path::Path::new(CONFIG_FILE)).unwrap_or_else(show_config_sample_and_exit_1);
+    debug!(logger, "Using configuration file: {:?}", config_file_path);
     let config_file = fs::File::open(config_file_path)?;
     Ok(serde_json::from_reader(config_file)?)
 }
@@ -86,17 +116,17 @@ fn closest_ancestor_dir(path: Option<&path::Path>) -> Option<&path::Path> {
     }
 }
 
-fn worker_thread(config: Arc<Config>, receiver: spmc::Receiver<GitRepoSyncRequest>) -> u16 {
+fn worker_thread(logger: slog::Logger, config: Arc<Config>, receiver: spmc::Receiver<GitRepoSyncRequest>) -> u16 {
     let mut error_count = 0;
     loop {
         match receiver.recv() {
             Ok(request) => {
-                let mut git_args = Vec::with_capacity(5);
+                let mut git_args = Vec::with_capacity(3);
                 if request.path.exists() {
                     if request.path.is_dir() {
                         git_args.append(&mut vec!["pull", "--prune"]);
                     } else {
-                        eprintln!("[FAILED]\t{} exists but is not a directory", request.path.to_str().unwrap());
+                        error!(logger, "{} exists but is not a directory, skipping", request.path.to_str().unwrap());
                         error_count += 1;
                         continue;
                     }
@@ -106,12 +136,13 @@ fn worker_thread(config: Arc<Config>, receiver: spmc::Receiver<GitRepoSyncReques
                             git_args.append(&mut vec!["clone", clone_url, request.path.to_str().unwrap()]);
                         },
                         None => {
-                            eprintln!("[FAILED]\t{} doesn't exist and no clone URL defined", request.path.to_str().unwrap());
+                            error!(logger, "{} doesn't exist and no clone URL defined", request.path.to_str().unwrap());
                             error_count += 1;
                             continue;
                         }
                     }
                 }
+                debug!(logger, "Running `git {:?}` for {:?}", git_args, request.path);
                 match process::Command::new("git")
                             .args(git_args)
                             .stdin(process::Stdio::null())
@@ -121,28 +152,28 @@ fn worker_thread(config: Arc<Config>, receiver: spmc::Receiver<GitRepoSyncReques
                         if output.status.success() {
                             if let Some(true) = config.verbose {
                                 match request.clone_url {
-                                    Some(clone_url) => println!("[OK]\t{} - {}", clone_url, request.path.to_str().unwrap()),
-                                    None            => println!("[OK]\t{}", request.path.to_str().unwrap()),
+                                    Some(clone_url) => info!(logger, "Ok {} -> {}", clone_url, request.path.to_str().unwrap()),
+                                    None            => info!(logger, "Ok {}", request.path.to_str().unwrap()),
                                 }
                             }
                         } else {
                             error_count += 1;
                             match output.status.code() {
                                 Some(code) => {
-                                    eprintln!("[FAILED]\tgit command for {} failed with status {}:\n----> stdout [{}]\n----> stderr [{}]",
-                                              request.path.to_str().unwrap(), code,
-                                              String::from_utf8_lossy(&output.stdout),
-                                              String::from_utf8_lossy(&output.stderr));
+                                    error!(logger, "git command for {} failed with status {}:\n----> stdout [{}]\n----> stderr [{}]",
+                                           request.path.to_str().unwrap(), code,
+                                           String::from_utf8_lossy(&output.stdout),
+                                           String::from_utf8_lossy(&output.stderr));
                                 },
                                 None => {
-                                    eprintln!("[FAILED]\tgit command for {} was killed external with a signal", request.path.to_str().unwrap());
+                                    error!(logger, "git command for {} was killed externally by a signal", request.path.to_str().unwrap());
                                 }
                             }
                             continue;
                         }
                     },
                     Err(_) => {
-                        eprintln!("[FAILED]\tunable to get exit status of git command for {}", request.path.to_str().unwrap());
+                        error!(logger, "Unable to get exit status of git command for {}", request.path.to_str().unwrap());
                         error_count += 1;
                         continue;
                     },
@@ -154,8 +185,23 @@ fn worker_thread(config: Arc<Config>, receiver: spmc::Receiver<GitRepoSyncReques
     error_count
 }
 
+fn create_root_logger() -> slog::Logger {
+    let stdout_decorator = slog_term::TermDecorator::new().stdout().build();
+    let stdout_drain = slog_term::FullFormat::new(stdout_decorator).build().filter_level(slog::Level::Debug).fuse();
+
+    let stderr_decorator = slog_term::TermDecorator::new().stderr().build();
+    let stderr_drain = slog_term::FullFormat::new(stderr_decorator).build().filter_level(slog::Level::Error).fuse();
+
+    let tee_drain = slog::Duplicate::new(stdout_drain, stderr_drain).fuse();
+
+    let async_drain = slog_async::Async::new(tee_drain).build().fuse();
+
+    slog::Logger::root(async_drain, o!())
+}
+
 fn main() {
-    let config = Arc::new(configuration().expect("Unable to read or parse your configuration file"));
+    let logger = create_root_logger();
+    let config = Arc::new(configuration(logger.clone()).expect("Unable to read or parse your configuration file"));
     let concurrency = config.concurrency.map_or(DEFAULT_CONCURRENCY, |v| {
         if v > 0 {
             v
@@ -163,13 +209,15 @@ fn main() {
             DEFAULT_CONCURRENCY
         }
     });
+    debug!(logger, "Using concurrency of {}", concurrency);
 
     let (tx, rx) = spmc::channel();
     let mut threads = Vec::with_capacity(concurrency as usize);
     for _ in 0..concurrency {
         let config = config.clone();
         let rx = rx.clone();
-        threads.push(thread::spawn(move || worker_thread(config, rx)));
+        let worker_logger = logger.clone();
+        threads.push(thread::spawn(move || worker_thread(worker_logger, config, rx)));
     }
 
     match config.github_access_token {
@@ -193,7 +241,7 @@ fn main() {
                                 }
                             },
                             Err(e) => {
-                                eprintln!("[WARNING] Problem accessing org `{}` repository list: {}", org.org, e);
+                                warn!(logger, "Problem accessing org `{}` repository list, skipping: {}", org.org, e);
                             }
                         }
                     }
@@ -214,10 +262,17 @@ fn main() {
         _ => ()
     }
     mem::drop(tx);
+    debug!(logger, "All requests queued, waiting for workers to finish");
 
     let mut error_count = 0u16;
     for t in threads {
         error_count += t.join().expect("Unable to get child thread result");
     }
-    process::exit(cmp::min(error_count, 255) as i32);
+    match cmp::min(error_count, 255) {
+        0 => {},
+        code => {
+            mem::drop(logger);
+            process::exit(code as i32);
+        }
+    }
 }
