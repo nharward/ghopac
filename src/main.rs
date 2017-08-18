@@ -14,24 +14,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! # What
-//!
-//! `ghopac` is _GitHub Organization Pull And Clone_ - a tool to pull/clone lots of Git
-//! repositories at once with a single command. It primarily has support for
-//! [Github](https://github.com/) organizations and cloning/pulling all organization repos you
-//! have access to. Additionally it also supports keeping existing cloned repos up to date,
-//! regardless of their origin. You can read more about it at ... wait for it ... the [ghopac
-//! Github repo](https://github.com/nharward/ghopac/).
-//!
-//! # Why
-//!
-//! I found myself working at companies with a lot of repositories in their Github organizations,
-//! and it was a pain to even find much less manually clone all of the ones I cared about. Disk is
-//! cheap, so I wrote a [Go](https://golang.org/) program to grab them all at once  in parallel.
-//! (see the [`go-legacy`](https://github.com/nharward/ghopac/tree/go-legacy) tag to see the code).
-//! I re-wrote it in [Rust](https://www.rust-lang.org/) because I needed an excuse to learn it.
-//!
-
 #[macro_use]
 extern crate slog;
 extern crate slog_async;
