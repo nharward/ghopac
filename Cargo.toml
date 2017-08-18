@@ -1,11 +1,11 @@
 [package]
 name        = "ghopac"
-description = GitHub Organization Pull And Clone
+description = "GitHub Organization Pull And Clone"
 version     = "0.1.0"
 authors     = ["NDH <nharward@users.noreply.github.com>"]
 license     = "GPL-3.0"
-repository  = https://github.com/nharward/ghopac
-readme      = README.md
+repository  = "https://github.com/nharward/ghopac"
+readme      = "README.md"
 keywords    = ["git", "github", "organization"]
 categories  = ["command-line-utilities", "development-tools"]
 
