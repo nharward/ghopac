@@ -47,6 +47,10 @@ use hyper::net::HttpsConnector;
 
 use slog::Drain;
 
+const PROGRAM_NAME: &'static str = env!("CARGO_PKG_NAME");
+const CONFIG_FILE:  &'static str = "config.json";
+const DEFAULT_CONCURRENCY: u8 = 4;
+
 #[derive(Serialize, Deserialize)]
 struct ConfigOrg {
     org: String,
@@ -62,14 +66,22 @@ struct Config {
     verbose:             Option<bool>,
 }
 
+#[derive(Debug)]
 struct GitRepoSyncRequest {
     path: path::PathBuf,
     clone_url: Option<String>,
 }
 
-const PROGRAM_NAME: &'static str = "ghopac";
-const CONFIG_FILE:  &'static str = "config.json";
-const DEFAULT_CONCURRENCY: u8 = 4;
+impl<'a> From<&'a GitRepoSyncRequest> for String {
+
+    fn from(request: &GitRepoSyncRequest) -> Self {
+        match request.clone_url {
+            Some(ref clone_url) => format!("{} - {}", request.path.to_str().unwrap(), clone_url),
+            None                => request.path.to_str().unwrap().to_owned(),
+        }
+    }
+
+}
 
 fn show_config_sample_and_exit_1() -> path::PathBuf {
     let sample_config = Config {
@@ -135,7 +147,7 @@ fn worker_thread(logger: slog::Logger, config: Arc<Config>, receiver: spmc::Rece
                         }
                     }
                 }
-                debug!(logger, "Running `git {:?}` for {:?}", git_args, request.path);
+                debug!(logger, "Running `git {:?}` for {:?}", git_args, &request);
                 match process::Command::new("git")
                             .args(git_args)
                             .stdin(process::Stdio::null())
@@ -144,10 +156,7 @@ fn worker_thread(logger: slog::Logger, config: Arc<Config>, receiver: spmc::Rece
                     Ok(output) => {
                         if output.status.success() {
                             if let Some(true) = config.verbose {
-                                match request.clone_url {
-                                    Some(clone_url) => info!(logger, "Ok {} -> {}", clone_url, request.path.to_str().unwrap()),
-                                    None            => info!(logger, "Ok {}", request.path.to_str().unwrap()),
-                                }
+                                info!(logger, "Ok {}", String::from(&request));
                             }
                         } else {
                             error_count += 1;
@@ -159,14 +168,14 @@ fn worker_thread(logger: slog::Logger, config: Arc<Config>, receiver: spmc::Rece
                                            String::from_utf8_lossy(&output.stderr));
                                 },
                                 None => {
-                                    error!(logger, "git command for {} was killed externally by a signal", request.path.to_str().unwrap());
+                                    error!(logger, "git command for '{}' was killed externally by a signal", String::from(&request));
                                 }
                             }
                             continue;
                         }
                     },
                     Err(_) => {
-                        error!(logger, "Unable to get exit status of git command for {}", request.path.to_str().unwrap());
+                        error!(logger, "Unable to get exit status of git command for '{}'", String::from(&request));
                         error_count += 1;
                         continue;
                     },
@@ -179,11 +188,14 @@ fn worker_thread(logger: slog::Logger, config: Arc<Config>, receiver: spmc::Rece
 }
 
 fn create_root_logger() -> slog::Logger {
+    let split_level = slog::Level::Error; // Anything this or higher to stderr, anything lower to stdout
+    let lower_than_filter = move |record: &slog::Record| ! record.level().is_at_least(split_level);
+
     let stdout_decorator = slog_term::TermDecorator::new().stdout().build();
-    let stdout_drain = slog_term::FullFormat::new(stdout_decorator).build().filter_level(slog::Level::Debug).fuse();
+    let stdout_drain = slog_term::FullFormat::new(stdout_decorator).build().filter(lower_than_filter).fuse();
 
     let stderr_decorator = slog_term::TermDecorator::new().stderr().build();
-    let stderr_drain = slog_term::FullFormat::new(stderr_decorator).build().filter_level(slog::Level::Error).fuse();
+    let stderr_drain = slog_term::FullFormat::new(stderr_decorator).build().filter_level(split_level).fuse();
 
     let tee_drain = slog::Duplicate::new(stdout_drain, stderr_drain).fuse();
 
@@ -195,12 +207,9 @@ fn create_root_logger() -> slog::Logger {
 fn main() {
     let logger = create_root_logger();
     let config = Arc::new(configuration(logger.clone()).expect("Unable to read or parse your configuration file"));
-    let concurrency = config.concurrency.map_or(DEFAULT_CONCURRENCY, |v| {
-        if v > 0 {
-            v
-        } else {
-            DEFAULT_CONCURRENCY
-        }
+    let concurrency = config.concurrency.map_or(DEFAULT_CONCURRENCY, |v| match v {
+        invalid if invalid <= 0 => DEFAULT_CONCURRENCY,
+        good                    => good,
     });
     debug!(logger, "Using concurrency of {}", concurrency);
 
@@ -225,6 +234,8 @@ fn main() {
                                 for org_repo in org_repos {
                                     let clone_url = if ! org_repo.ssh_url.trim().is_empty() {
                                         Some(org_repo.ssh_url)
+                                    } else if ! org_repo.clone_url.trim().is_empty() {
+                                        Some(org_repo.clone_url)
                                     } else {
                                         None
                                     };

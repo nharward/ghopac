@@ -1,7 +1,7 @@
 [package]
 name        = "ghopac"
 description = "GitHub Organization Pull And Clone"
-version     = "0.1.0"
+version     = "0.1.1-SNAPSHOT"
 authors     = ["NDH <nharward@users.noreply.github.com>"]
 license     = "GPL-3.0"
 repository  = "https://github.com/nharward/ghopac"
